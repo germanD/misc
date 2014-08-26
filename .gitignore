@@ -1,0 +1,10 @@
+# Ignore temp files
+*~
+*.vo
+*.v.d
+*.glob
+
+
+#Ignore Coq Makefile temp
+loadpath.v
+Makefile.coq
