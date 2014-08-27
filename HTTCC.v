@@ -13,25 +13,35 @@
 Set Universe Polymorphism.
 Set Printing All.
 
-(* some toy state: until we get full ssreflect support and can
-re-implement HTT's heap *)
+(* 
+** Some toy state: until we get full ssreflect support and can
+** re-implement HTT's heaps
+*)
 
-Parameter (heap : Type -> Type).
+Parameter (state : Type -> Type).
 
-Definition pre W := heap W -> Prop.
-Definition post W X := X -> heap W -> heap W -> Prop.
+(* Some algebra over  state *)
 
-Parameter write: forall W,  W -> heap W -> heap W.
-Parameter read: forall  W, heap W -> W.
+Definition pre W := state W -> Prop.
+Definition post W X := X -> state W -> state W -> Prop.
+
+Parameter write: forall W,  W -> state W -> state W.
+Parameter read: forall  W, state W -> W.
+
+Axiom read_write : forall W h w,  read W (write W w h) = w.  
+
+Axiom write_write : forall W h w v,  
+                      write W w (write W w h) = write W v (write W w h).  
+
+Axiom write_read: forall W h, write W (read W h) h = h.
 
 
 (* A polymorphic HTT + State + Continuation monad *)
 
 Polymorphic Definition SK {A X W: Type} 
             (P : pre W) (Q: post W A) : Type :=
-  forall s: heap W, P s -> 
+  forall s: state W, P s -> 
                   (forall x m, Q x s m -> X) -> X.
-
 
 Arguments SK {A} X {W} P Q .
 
@@ -50,8 +60,41 @@ Definition ret : SK R ret_P ret_s :=
   fun s p k => @k x s (retQ_refl s).
 
 End Ret.
-
 Arguments ret {X} W R x s _ _ .
+
+
+Section Bind.
+Variables (A B W R: Type).
+Variables (p1: pre W) (q1: post W A).
+Variables (p2 : A -> pre W) (q2 : A -> post W B).
+Variables (e1 : SK R p1 q1) (e2 : forall x, SK R (p2 x) (q2 x)).
+
+Definition bind_pre : pre W := 
+  fun i => 
+     p1 i /\ forall x m, q1 x i m -> (p2 x) m.
+
+Definition bind_post : post W B := 
+   fun y i m => exists x, exists h, 
+     q1 x i h /\ (q2 x) y h m.
+
+
+Lemma bindP1 h : bind_pre h -> p1 h.
+Proof. intro H; case H; auto. Qed. 
+
+Lemma bindP2 i x h : bind_pre i -> q1 x i h -> (p2 x) h.
+Proof. intros P Q; destruct P; apply H0; auto. Qed.
+ 
+Lemma bindQ i x h y m : 
+        q1 x i h -> (q2 x) y h m -> bind_post y i m.
+Proof. intros; exists x; exists h; auto. Qed.
+
+Definition bind : SK R bind_pre bind_post :=
+ fun i pf1 k => 
+          e1 i (bindP1 i pf1) 
+           (fun x h p2 => (e2 x) h (bindP2 i x h pf1 p2) 
+           (fun y m p3 => k y m (bindQ i x h y m p2 p3))).
+End Bind.
+Arguments bind {A B W R p1 q1 p2 q2} e1 e2 _ _ _ .
 
 Section Store.
 Variables (X R :Type) (x:X).
@@ -67,39 +110,71 @@ Polymorphic
 Definition store : SK R write_P write_Q :=
   fun s p k => k tt (write X x s) (writeQ s).
 End Store.
-
 Arguments store {X} R x _  _ _. 
 
-Definition rr1:= ret False nat (ret False nat 5).
+Section Fetch.
+Variables (X R :Type).
 
-(* not-using the heap lets you get away with murder *)
+Definition read_P : pre X := fun i => exists v j,  
+                                        i = write X v j.
+Definition read_Q  : post X X :=
+  fun r i m =>  forall v j, i = write X v j ->
+                  m = i /\ r = v.
 
-Definition st1:= store nat (ret nat nat 5). 
+Lemma fetchQ s :  read_Q (read X s) s s.
+Proof. intros v j H; split ;[|rewrite H ;rewrite (read_write X j)]; auto. Qed.
 
-Definition sst1 := store unit (st1).
+Polymorphic 
+Definition fetch : SK R read_P read_Q :=
+  fun s p k => k (read X s) s (fetchQ s).
+End Fetch.
+Arguments fetch {X R} _ _ _.
 
-Set Printing Universes.
 
-Check st1.
+(* Some examples *)
 
-Check sst1.
 
-(*  st1 = 
-@store (@SK nat nat N (ret_P N) (ret_s nat N (S (S (S (S (S O))))))) nat
-  (@ret nat N nat (S (S (S (S (S O))))))
-     : @SK unit nat
-         (@SK nat nat N (ret_P N) (ret_s nat N (S (S (S (S (S O)))))))
-         (write_P
-            (@SK nat nat N (ret_P N) (ret_s nat N (S (S (S (S (S O))))))))
-         (write_Q
-            (@SK nat nat N (ret_P N) (ret_s nat N (S (S (S (S (S O)))))))
-            (@ret nat N nat (S (S (S (S (S O)))))))
+Polymorphic 
+Definition rr1 {A: Type}
+  := ret A nat (ret A nat 5).
 
-st1 is universe polymorphic
+Polymorphic 
+Definition st1 {A B : Type} 
+            := store A (ret B unit 5). 
 
+Definition  br1 
+  := bind (store nat 4) 
+          (fun _ => bind fetch (ret _ _ )).
+
+Polymorphic Definition id {A : Type} (a : A) := a.
+
+(* I can Join rets *)
+
+Definition brr1 {A: Type} := bind (@rr1 A) id.
+
+(* However, I have to explicitly mention the state type here *)
+
+
+(* I can store a program and then read it *)
+Polymorphic 
+Definition bsf {A B: Type} := bind (@st1 A B) (fun _ => fetch).
+
+(* 
+** Can I flatten it straight away?  
+**    join : SK (SK A) -> SK A := fun m => bind m id
+**
 *)
 
 
+Fail Polymorphic 
+Definition bsf' := 
+    bind bsf id.
+
+(* 
+** Well, I guess that I  would still need 
+**   Sigma types for pulling something like this.
+** Or a  proper join. 
+*)
 
 
 
