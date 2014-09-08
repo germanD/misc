@@ -18,12 +18,8 @@ Set Printing All.
 ** re-implement HTT's heaps
 *)
 
-Parameter (state : Type -> Type).
-
+Parameter state : Type -> Type.
 (* Some algebra over  state *)
-
-Definition pre W := state W -> Prop.
-Definition post W X := X -> state W -> state W -> Prop.
 
 Parameter write: forall W,  W -> state W -> state W.
 Parameter read: forall  W, state W -> W.
@@ -35,82 +31,113 @@ Axiom write_write : forall W h w v,
 
 Axiom write_read: forall W h, write W (read W h) h = h.
 
+Parameter safe: forall W, state W -> Prop.
+
+Definition pre W := state W -> Prop.
+Definition post W X := X -> state W -> state W -> Prop.
+Definition spec W A := (pre W * post W A)%type.
+
 
 (* A polymorphic HTT + State + Continuation monad *)
 
-Polymorphic Definition SK {A X W: Type} 
-            (P : pre W) (Q: post W A) : Type :=
-  forall s: state W, P s -> 
-                  (forall x m, Q x s m -> X) -> X.
+Polymorphic 
+Definition SK {A X W: Type} 
+            (s : spec W A) : Type :=
+  forall i: state W, (fst s) i -> 
+                  (forall x m, (snd s) x i m -> X) -> X.
 
-Arguments SK {A} X {W} P Q .
+Inductive SigSK {A X W : Type } := 
+  BigSK {spec_of: spec W A;
+         comm: @SK A X W spec_of}.
+
+Polymorphic
+Definition Kont {A X W: Type}  (s : spec W A) : Type := 
+    forall k, 
+      @SK A X W  (fun i => (fst s) i /\ i = k, snd s) -> (fst s) k ->  X.
+
+Arguments Kont {A} X {W} s.
+Arguments SigSK A {X W}. 
+Arguments SK {A} X {W} s.
+Arguments BigSK {A X W spec_of} _. 
+
+Definition verify {A W} (i: state W) (s : spec W A) 
+           (r : A -> state W -> Prop) :=
+  (fst s) i /\ forall y m, (snd s) y i m -> r y m.
+
+Definition conseq {A W} (s: spec W A) ( p : pre W) (q : post W A) := 
+  forall i, p i -> verify i s (fun y m => q y i m).
+
+Local Notation conseq' := 
+  (fun W A (s1 s2 : spec W A) => 
+     conseq s1 (let (x, _) := s2 in x) 
+               (let (_, x) := s2 in x)).
 
 Section Ret.
 Variables (X W R :Type) (x:X).
 
-Definition ret_P : pre W := fun _ => True.
-Definition ret_s  : post W X :=
-  fun r i m => i = m /\ r = x.
+Definition ret_s  : spec W X :=
+  (fun _ => True, fun r i m => i = m /\ r = x).
 
-Lemma retQ_refl: forall s,  ret_s x s s.
-Proof. intro; unfold ret_s; auto. Qed.
+Lemma retQ_refl: forall s,  (snd ret_s) x s s.
+Proof. intro; unfold ret_s; simpl; auto. Qed.
 
 Polymorphic 
-Definition ret : SK R ret_P ret_s :=
+Definition ret : SK R ret_s :=
   fun s p k => @k x s (retQ_refl s).
 
 End Ret.
-Arguments ret {X} W R x s _ _ .
+Arguments ret {X} W R x i _ _.
 
 
 Section Bind.
 Variables (A B W R: Type).
-Variables (p1: pre W) (q1: post W A).
-Variables (p2 : A -> pre W) (q2 : A -> post W B).
-Variables (e1 : SK R p1 q1) (e2 : forall x, SK R (p2 x) (q2 x)).
+Variables (s1: spec W A).
+Variables (s2 : A -> spec W B).
+Variables (e1 : SK R s1) (e2 : forall x, SK R (s2 x)).
 
 Definition bind_pre : pre W := 
   fun i => 
-     p1 i /\ forall x m, q1 x i m -> (p2 x) m.
+     (fst s1) i /\ forall x m, (snd s1) x i m -> (fst (s2 x)) m.
 
 Definition bind_post : post W B := 
    fun y i m => exists x, exists h, 
-     q1 x i h /\ (q2 x) y h m.
+     (snd s1) x i h /\ (snd (s2 x)) y h m.
 
+Definition bind_s :spec W B := (bind_pre, bind_post).
 
-Lemma bindP1 h : bind_pre h -> p1 h.
+Lemma bindP1 h : bind_pre h -> (fst s1) h.
 Proof. intro H; case H; auto. Qed. 
 
-Lemma bindP2 i x h : bind_pre i -> q1 x i h -> (p2 x) h.
+Lemma bindP2 i x h : bind_pre i -> (snd s1) x i h -> (fst (s2 x)) h.
 Proof. intros P Q; destruct P; apply H0; auto. Qed.
  
 Lemma bindQ i x h y m : 
-        q1 x i h -> (q2 x) y h m -> bind_post y i m.
+        (snd s1) x i h -> (snd (s2 x)) y h m -> bind_post y i m.
 Proof. intros; exists x; exists h; auto. Qed.
 
-Definition bind : SK R bind_pre bind_post :=
+Definition bind : SK R bind_s :=
  fun i pf1 k => 
           e1 i (bindP1 i pf1) 
            (fun x h p2 => (e2 x) h (bindP2 i x h pf1 p2) 
            (fun y m p3 => k y m (bindQ i x h y m p2 p3))).
 End Bind.
-Arguments bind {A B W R p1 q1 p2 q2} e1 e2 _ _ _ .
+Arguments bind {A B W R s1 s2} e1 e2 _ _ _ .
 
 Section Store.
 Variables (X R :Type) (x:X).
 
-Definition write_P : pre X := fun _ => True.
-Definition write_Q  : post X unit :=
-  fun r i m =>  m = write X x i /\ r = tt.
+Definition write_s : spec X unit :=
+  (fun i => safe X i,
+            fun r i m => m = write X x i /\ r = tt).
 
-Lemma writeQ s:  write_Q tt s (write X x s).
-Proof. unfold write_Q; auto. Qed.
+Lemma writeQ s:  (snd write_s) tt s (write X x s).
+Proof. unfold write_s; simpl;auto. Qed.
 
 Polymorphic 
-Definition store : SK R write_P write_Q :=
+Definition store : SK R write_s  :=
   fun s p k => k tt (write X x s) (writeQ s).
 End Store.
-Arguments store {X} R x _  _ _. 
+Arguments store {X} R x _ _ _. 
 
 Section Fetch.
 Variables (X R :Type).
@@ -121,14 +148,42 @@ Definition read_Q  : post X X :=
   fun r i m =>  forall v j, i = write X v j ->
                   m = i /\ r = v.
 
+Definition read_s := (read_P, read_Q).
+
 Lemma fetchQ s :  read_Q (read X s) s s.
 Proof. intros v j H; split ;[|rewrite H ;rewrite (read_write X j)]; auto. Qed.
 
 Polymorphic 
-Definition fetch : SK R read_P read_Q :=
+Definition fetch : SK R read_s :=
   fun s p k => k (read X s) s (fetchQ s).
 End Fetch.
 Arguments fetch {X R} _ _ _.
+
+
+Section Consequence.
+Variables (A W R: Type) (s1 s2: spec W A).
+Variables (e1 : SK R s1)  (pf : conseq' W A s1 s2).
+
+Lemma doP i : (fst s2) i -> (fst s1) i.
+Proof. simpl; intro; case (pf i H); auto. Qed.
+
+Lemma doQ i : 
+       (fst s2) i -> (forall y m, (snd s2) y i m ->  R) ->  R.
+Proof.
+intros P2 K.
+case (pf i P2).
+intros P1 H1.
+apply (e1 i P1).
+intros x m Q1.
+exact (K x m (H1 x m Q1)).
+Qed.
+
+Polymorphic
+Definition Do : SK R s2 :=  doQ.
+
+End Consequence.
+
+Arguments Do {A W R s1 s2} e1 pf _ _ _.
 
 
 (* Some examples *)
@@ -142,8 +197,9 @@ Polymorphic
 Definition st1 {A B : Type} 
             := store A (ret B unit 5). 
 
-Definition  br1 
-  := bind (store nat 4) 
+Polymorphic
+Definition  br1 {X: Type} 
+  := bind (store X 4) 
           (fun _ => bind fetch (ret _ _ )).
 
 Polymorphic Definition id {A : Type} (a : A) := a.
@@ -153,6 +209,9 @@ Polymorphic Definition id {A : Type} (a : A) := a.
 Definition brr1 {A: Type} := bind (@rr1 A) id.
 
 (* However, I have to explicitly mention the state type here *)
+
+
+
 
 
 (* I can store a program and then read it *)
@@ -165,7 +224,6 @@ Definition bsf {A B: Type} := bind (@st1 A B) (fun _ => fetch).
 **
 *)
 
-
 Fail Polymorphic 
 Definition bsf' := 
     bind bsf id.
@@ -177,7 +235,30 @@ Definition bsf' :=
 *)
 
 
+Polymorphic 
+Definition stC1 {X: Type} 
+            := store X (BigSK (@br1 X)). 
 
+Polymorphic 
+Definition stC2 {X: Type} 
+            :=  bind (@stC1 X) (fun _ => fetch). 
+
+Fail
+Polymorphic 
+Definition stC3 {X : Type} 
+            :=  bind (@stC2 X) (fun p => (comm p)). 
+ 
+
+(*
+The command has indeed failed with message:
+=> Error:
+In environment
+X : Type
+p : @SigSK nat X nat
+The term "@comm nat X nat p" has type "@SK nat X nat (@spec_of nat X nat p)"
+while it is expected to have type "@SK ?112 X (@SigSK nat X nat) (?116 p)"
+(cannot unify "state (@SigSK nat X nat)" and "state nat").
+*)
 
 
 
