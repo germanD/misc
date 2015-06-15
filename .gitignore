@@ -3,7 +3,8 @@
 *.vo
 *.v.d
 *.glob
-
+*#
+.#*
 
 #Ignore Coq Makefile temp
 loadpath.v
