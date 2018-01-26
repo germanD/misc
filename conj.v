@@ -2,30 +2,25 @@ Require Import ssreflect ssrbool ssrfun.
 From mathcomp Require Import ssrnat eqtype seq.
 From FCSL Require Import pred prelude idynamic domain pcm unionmap heap.
 From FCSL Require Import coding feap state zigzag world rely inject atomic.
-From FCSL Require Import schedule refine hide process always model stsep. 
+From FCSL Require Import schedule refine hide process always model stsep lemmas. 
 
+(* A bit of an explanation of how the structural rules of separation logic
+ are implemented in FCSL, showcased by one which we haven't implemented 
+before, the CONJUNCTION rule, as it is not that useful in a shallow embedding.
 
-(* Lets look at the conjunction rule as expressed in the ESOP paper,
-     it says: 
+Lets look at the conjunction rule as expressed in the ESOP paper: 
      
        {P_1} e {Q_1} {P_2} e {Q_2}
      ----------------------------- 
        {P_1 /\ P_2} e {Q_1 /\ Q_2}
   
-  Given the interpretation of ST Types this is an issue, as we have
-   two judgements e : STsep (p1,q1) and e : STsep (p2,q2)
+In FCSL we implement these structural rules, as opposed to "constructor" rules,
+as derived Floyd-style verification lemmas (in lemmas.v and stsep.v)
 
-We could implement it using a program constructor (conj e)
-which takes as a hypothesis the code of e has both specs s1 and s2,
-and then show that the code of (conj e) (= code_of e) satisfies the
-has_spec predicate for conj_spec. This will be a quirky and deep-ish
-embedding of the rule, which would require a program constructor for
-the conjunction rule. We don't want that, we want to implement structural 
-rules as derived lemmas.
 
-The first derived lemma we build allow us to show that stepping a program 
-on an assertion which is a conjunction, can be flipped to the conjunction of 
-the verify lemmas.
+We don't want this approach, as it would require the programming language to mark, 
+we want to implement structural rules as derived lemmas. These are expressed 
+in terms of the verify predicate (which implements some sort of wp_calculus).
 
 Print verify.
 
@@ -65,19 +60,58 @@ satisfies the stronger pre condition s.1 then we can run all the denotations
 in e and, if and when they finish every state satisfies the weaker 
 post-condition (s.2 i). 
 
+CLearly, we can use conseq to reflect that a program has its own spec:
 
+conseq_refl  : forall (W : mod) (A : Type) (e : ST W A), conseq e (spec_of e)
 
- *)
+However, the main use of conseq is implementing the rule of consequence: 
+unlike other traditional Hoare/Separation Logics, here Do is a constructor 
+which implements explicit weakeinings:
 
+Check do'.
 
-3. the Floyd-style stepping rules to stepwise reduce proof outlines--- proof obligations that arise of assigning a triple to a program.
+do' : forall (W : mod) (A : Type) (s2 : spec A) (e : ST W A),
+    conseq e s2 -> STbin W (A:=A) s2
 
-The verify lemma implements the wp inside the definition of the triple.
+That is why whenever we write a program in FCSL it has a top-level do:
+
+Program c : STsep [W] A (p,q) := do e'.
+
+this will generate a conseq statement between the inferred 
+specification of the code e'and the code ascribed by the user.
+ 
+3. We use the verify lemma to implement Floyd-style stepping rules 
+to stepwise reduce proof outlines: proof obligations that arise of 
+assigning a triple to a program: val_do, step, etc.
+
+Check val_do.
+Check step.
+
+4. And finally, we use the verify lemma to implement different derived
+lemmas: e.g the frame rule, or rules for pulling nested logical
+variables to the top level.
+
+Check frame_do.
+
+Check frame_do4.
+
+The latter frame lemma is the one which corresponds to the rule "on paper", 
+which is not necessarily the one you rather use in programs.
 
 *)
 
+
 Section Floyd.
 Variables (W : mod) (A : Type) (e : ST W A).
+
+
+(* On to the conjunction rule:
+
+The first derived lemma we build allow us to show that stepping a
+program on an assertion which is a conjunction, can be flipped to the
+conjunction of the verify lemmas.
+
+*)
 
   
 Lemma vrfC i (k1 k2 :cont A) : 
@@ -96,26 +130,27 @@ split=>//; first by move=>v T; split; [apply:H1 | apply:H2].
 by apply:(HI sf tf);[ apply:A1 =>// | apply:A2=>//].
 Qed.
 
-(* we will need then this one for pulling out the binarified
-implication, using after lemmas. It is just a wrapper for calls to
-vrf_mono, but I just write it to avoid instantiating the goal later *)
+(* we will need the following one the example in order to pull out 
+the binarified implication, using after lemmas. It is just a wrapper 
+for a  call to vrf_mono, but I just write it to avoid instantiating 
+explicit parameters in the goal later *)
 
 Lemma vrfI i (P : Prop) (k :cont A) :
    verify i e k -> verify i e (fun r m => P -> k r m).
 Proof. by apply:vrf_mono=>/= y m //. Qed.
        
-(* Then we want to implement the rule properly, so we resort to Hoare
-weakening, which is implemented using conseq,
-
-Print conseq.
+(* For completeness, even if it would not be much useful, 
+we implement a conseq based lemma which is closer to the statement of
+the traditional CONJUNCTION rule.
 
 Since a program e cannot have a spec s1 and s2 at the same time via
-type ascription, we use hoare weakening to do so.
+type ascription, we use hoare weakening to do so. Then, the spec of e 
+is such that it can be weakened both to s <= (p1,q1), and s <= (p2,q2), 
+then we can prove using the "do" notation that we can weaken the 
+spec of e to the spec in the conjunction rule:
 
-The spec of e is such that it can be weakened both to s <= (p1,q1),
-and s <= (p2,q2), then we can prove using the "do" notation that we
-can weaken the spec of e by the conjunction rule:
-
+  {Sp} e {Sq}  (Sp,Sq)<= (P1,Q1)  (Sp, Sq) <= (P2,Q2)
+----------------------------------------------------------
  {P_1 /\ Q_1} (do e) {P_2 /\ Q2} *)
 
 (* Lift to Conseq, using binary posts *)
@@ -153,4 +188,3 @@ move=>i/= [P1 P2]; apply:vrfI; apply:vrfC=>//=.
 by move:(pf_2 i P2)=>/=; apply:vrf_mono =>// y m /(_ P2)//.
 Qed.
 End ExampleUse.
-
