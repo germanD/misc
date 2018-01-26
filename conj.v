@@ -120,14 +120,12 @@ program on an assertion which is a conjunction, can be flipped to the
 conjunction of the verify lemmas.
 
 *)
-
   
 Lemma vrfC i (k1 k2 :cont A) : 
   verify i e k1 -> verify i e k2 ->
      verify i e (fun r m =>  k1 r m /\ k2 r m).
 Proof.
-move=>E1 E2 P t T ss.
-move:(E1 P t T ss)(E2 P t T ss).
+move=>E1 E2 P t T ss; move:(E1 P t T ss)(E2 P t T ss).
 elim:ss i t {E1 E2 P T} =>//=.
 - move=> i t [W0 H1][_ H2].
  by split=>// s M v T; split; [apply: H1| apply:H2].
@@ -138,8 +136,12 @@ split=>//; first by move=>v T; split; [apply:H1 | apply:H2].
 by apply:(HI sf tf);[ apply:A1 =>// | apply:A2=>//].
 Qed.
 
-(* we will need the following one the example in order to pull out 
-the binarified implication, using after lemmas. It is just a wrapper 
+(* TO DO: Can I refactor the proof using some of the 
+  already existing always/after lemmas instead of doing induction on 
+  the scheduler ss? *)
+
+(* We will need the following lemma in the example below in order to pull 
+out  the binarified implication, using after lemmas. It is just a wrapper 
 for a  call to vrf_mono, but I just write it to avoid instantiating 
 explicit parameters in the goal later *)
 
