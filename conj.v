@@ -54,6 +54,14 @@ conseq =
   fun (W : mod) (A : Type) (e : ST W A) (s : spec A) =>
     forall i : state, s.1 i -> verify i e (s.2 i)
 
+The type e : ST W A, is a sigma packs=ing a specification and a 
+program which supports it:
+
+
+Print ST.
+
+Inductive ST W A :=  with_spec : forall s : spec A, STbin W s -> ST W A
+
 Intuitively, this is saying that: given a program e with an implicit, 
 and usually inferred by the typechecker, spec s', if we have a state i that
 satisfies the stronger pre condition s.1 then we can run all the denotations
@@ -78,7 +86,7 @@ That is why whenever we write a program in FCSL it has a top-level do:
 Program c : STsep [W] A (p,q) := do e'.
 
 this will generate a conseq statement between the inferred 
-specification of the code e'and the code ascribed by the user.
+specification of the code e' and the specification ascribed by the user.
  
 3. We use the verify lemma to implement Floyd-style stepping rules 
 to stepwise reduce proof outlines: proof obligations that arise of 
