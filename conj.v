@@ -115,9 +115,11 @@ Variables (W : mod) (A : Type) (e : ST W A).
 
 (* On to the conjunction rule:
 
-The first derived lemma we build allow us to show that stepping a
-program on an assertion which is a conjunction, can be flipped to the
-conjunction of the verify lemmas.
+The first derived lemma we define enables us to show that stepping a
+program on a continuation which is a conjunction, can be flipped to 
+proving  the conjunction of the verify lemmas. i.e. our implementation 
+of the conjunction rule is a statement that the vrf_predicate commutes 
+with the conjunction of post_conditions.
 
 *)
   
