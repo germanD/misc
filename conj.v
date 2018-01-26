@@ -20,21 +20,65 @@ which takes as a hypothesis the code of e has both specs s1 and s2,
 and then show that the code of (conj e) (= code_of e) satisfies the
 has_spec predicate for conj_spec. This will be a quirky and deep-ish
 embedding of the rule, which would require a program constructor for
-the conjunction rule.
-
-We don't want that, we want to implement structural rules as derived
-lemmas.
+the conjunction rule. We don't want that, we want to implement structural 
+rules as derived lemmas.
 
 The first derived lemma we build allow us to show that stepping a program 
 on an assertion which is a conjunction, can be flipped to the conjunction of 
 the verify lemmas.
 
-Where the verify lemma implements the wp inside the definition of the triple.
+Print verify.
+
+verify = 
+  fun (W : mod) (A : Type) (i : state) (e : ST W A) (r : A -> state -> Prop) =>
+   i \In Mod.coh W -> forall t : tree W A, t \In code_of e -> after i t r
+ 
+Here, after entails that al possible executions step i ; t into a m; (Ret v)' state, 
+where the unary postcondition ("conts") (s.2 i) holds of v and m. We use the 
+verify lemmas to implement three things:
+
+1. The meaning of a triple.
+
+The meaning of the explicit triple type Stbin in model.v is a record packing 
+the set of models of a program (T below), and a proof that it "has_spec"
+
+Print has_spec.
+
+has_spec = 
+   fun (W : mod) (A : Type) (s : spec A) =>
+        [Pred T | forall (i : state) (t : tree W A),
+          s.1 i -> i \In Mod.coh W -> t \In T -> after i t (s.2 i)]
+
+
+2. The weakening between specifications, and the rule of consequence, 
+which is a program in FCSL.
+
+Print conseq.
+
+conseq = 
+  fun (W : mod) (A : Type) (e : ST W A) (s : spec A) =>
+    forall i : state, s.1 i -> verify i e (s.2 i)
+
+Intuitively, this is saying that: given a program e with an implicit, 
+and usually inferred by the typechecker, spec s', if we have a state i that
+satisfies the stronger pre condition s.1 then we can run all the denotations
+in e and, if and when they finish every state satisfies the weaker 
+post-condition (s.2 i). 
+
+
 
  *)
 
+
+3. the Floyd-style stepping rules to stepwise reduce proof outlines--- proof obligations that arise of assigning a triple to a program.
+
+The verify lemma implements the wp inside the definition of the triple.
+
+*)
+
 Section Floyd.
 Variables (W : mod) (A : Type) (e : ST W A).
+
   
 Lemma vrfC i (k1 k2 :cont A) : 
   verify i e k1 -> verify i e k2 ->
