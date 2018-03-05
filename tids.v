@@ -1,6 +1,6 @@
 (* scratch.v  *)
-
-Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+Require Import ssreflect ssrbool.
+From mathcomp Require Import ssrnat eqtype seq.
 
 (* tids Implemented from scratch *)
 
