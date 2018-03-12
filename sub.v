@@ -7,14 +7,13 @@ Unset Printing Implicit Defensive.
 
 (* A stupid property of the transitive closure. *)
 
-
 (* We have two sub-relations A and B of V, which we now is a strict
   partial order: then we want to show that if V is a strict partial
   order, then thw tranisitive closure of A union B cannot have cycles
   *)
 
 (* e.g. A is PO, B is RF, AUBT is CO/HB and V = is visibility *)
-
+  
 Section RelFacts.
 
 Variable X : Type.
@@ -58,5 +57,13 @@ Proof. by exact:t_trans. Qed.
 
 Lemma antiAUBT : antisymmetric _ AUBT.
 Proof. move=>x y /transAUBT H2 /H2 /irrAUBT //. Qed. 
-  
+
+Definition close {X} (r:relation X) (o:X) :=
+  fun x y =>  r x o /\ r y o /\ r x y.  
+
 End RelFacts.
+
+
+
+
+ 
